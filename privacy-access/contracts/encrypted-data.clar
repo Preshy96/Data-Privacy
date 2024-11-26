@@ -7,6 +7,7 @@
 (define-constant ERROR-USER-NOT-FOUND (err u3))
 (define-constant ERROR-INVALID-PERMISSION-LEVEL (err u4))
 (define-constant ERROR-ACCESS-PERIOD-EXPIRED (err u5))
+(define-constant ERROR-INVALID-INPUT (err u6))
 
 ;; Data maps
 (define-map registered-users 
@@ -54,6 +55,17 @@
     ))
 )
 
+(define-private (validate-buff-32 (input (optional (buff 32))))
+    (match input
+        buff (is-eq (len buff) u32)
+        false
+    )
+)
+
+(define-private (is-valid-user (user principal))
+    (is-some (map-get? registered-users user))
+)
+
 ;; Public variables
 (define-data-var contract-administrator principal tx-sender)
 (define-data-var minimum-required-permission uint u1)
@@ -65,6 +77,7 @@
         (requesting-address tx-sender)
     )
     (asserts! (is-none (map-get? registered-users requesting-address)) ERROR-USER-ALREADY-EXISTS)
+    (asserts! (validate-buff-32 initial-data-hash) ERROR-INVALID-INPUT)
     (ok (map-set registered-users 
         requesting-address
         {
@@ -81,6 +94,7 @@
         (requesting-address tx-sender)
         (existing-user-data (unwrap! (map-get? registered-users requesting-address) ERROR-USER-NOT-FOUND))
     )
+    (asserts! (is-eq (len updated-data-hash) u32) ERROR-INVALID-INPUT)
     (ok (map-set registered-users
         requesting-address
         (merge existing-user-data {
@@ -96,7 +110,9 @@
         (owner-profile-data (unwrap! (map-get? registered-users data-owner-address) ERROR-USER-NOT-FOUND))
         (calculated-expiry-height (+ block-height access-duration))
     )
+    (asserts! (is-valid-user requesting-party) ERROR-INVALID-INPUT)
     (asserts! (<= access-permission-level (get user-permission-level owner-profile-data)) ERROR-INVALID-PERMISSION-LEVEL)
+    (asserts! (< block-height calculated-expiry-height) ERROR-INVALID-INPUT)
     (ok (map-set user-access-registry
         { data-owner: data-owner-address, data-requester: requesting-party }
         {
@@ -111,6 +127,7 @@
     (let (
         (data-owner-address tx-sender)
     )
+    (asserts! (is-valid-user access-requester) ERROR-INVALID-INPUT)
     (ok (map-delete user-access-registry { data-owner: data-owner-address, data-requester: access-requester }))
 ))
 
@@ -128,6 +145,7 @@
         (admin-address tx-sender)
     )
     (asserts! (is-contract-admin admin-address) ERROR-UNAUTHORIZED-ACCESS)
+    (asserts! (is-valid-user target-user) ERROR-INVALID-INPUT)
     (asserts! (and (>= new-permission-level (var-get minimum-required-permission)) 
                    (<= new-permission-level (var-get maximum-allowed-permission))) 
               ERROR-INVALID-PERMISSION-LEVEL)
